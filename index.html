@@ -1,0 +1,721 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>トキモン</title>
+  <style>
+    :root {
+      --primary: #4f46e5;
+      --bg: #f0f2f5;
+    }
+    body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; background: var(--bg); text-align: center; margin: 0; padding: 10px; }
+    .card { background: white; max-width: 480px; margin: 0 auto; padding: 20px; border-radius: 16px; box-shadow: 0 4px 12px rgba(0,0,0,0.08); box-sizing: border-box; }
+    
+    .screen { display: none; }
+    .screen.active { display: block; }
+
+    button { background: var(--primary); color: white; border: none; padding: 12px 18px; margin: 6px; border-radius: 8px; cursor: pointer; font-size: 16px; font-weight: bold; transition: opacity 0.2s; }
+    button:disabled { background: #9ca3af; cursor: not-allowed; }
+    button.secondary { background: #6b7280; }
+    button.danger { background: #ef4444; }
+    
+    input[type="number"] { font-size: 20px; padding: 6px; border: 2px solid #cbd5e1; border-radius: 8px; text-align: center; width: 100px; }
+    input[type="text"] { font-size: 16px; padding: 8px; width: 180px; text-align: center; border: 2px solid #cbd5e1; border-radius: 8px; }
+    
+    .status-row { display: flex; justify-content: space-between; align-items: center; margin: 10px 0; background: #f8fafc; padding: 8px 12px; border-radius: 8px; }
+    .btn-group { display: flex; gap: 4px; align-items: center; }
+    .btn-small { padding: 6px 10px; font-size: 13px; margin: 0; }
+    .btn-reset { padding: 6px 8px; font-size: 12px; margin: 0; background: #f59e0b; }
+    
+    .hp-bar { width: 100%; background: #e5e7eb; height: 16px; border-radius: 8px; overflow: hidden; margin: 6px 0; }
+    .hp-fill { height: 100%; background: #22c55e; transition: width 0.3s; }
+    .cmd-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 15px; }
+    .cmd-btn-container { display: flex; flex-direction: column; align-items: center; width: 100%; }
+    .cmd-btn-container button { width: 100%; margin: 0; }
+    .cmd-preview { font-size: 11px; color: #475569; margin-top: 4px; height: 16px; font-weight: bold; }
+    
+    #log { height: 130px; overflow-y: auto; background: #1e293b; color: #f8fafc; padding: 10px; border-radius: 8px; text-align: left; font-size: 13px; line-height: 1.5; }
+    
+    .timer-display { font-size: 32px; font-weight: bold; color: #ef4444; margin: 10px 0; }
+    
+    .avatar-option { font-size: 28px; cursor: pointer; padding: 6px 10px; border: 2px solid transparent; border-radius: 8px; display: inline-block; }
+    .avatar-option.selected { border-color: var(--primary); background: #e0e7ff; }
+    .char-icon { font-size: 36px; line-height: 1; margin-bottom: 2px; }
+    
+    /* オンライン対戦用 UI */
+    .room-box { background: #f8fafc; padding: 12px; border-radius: 8px; margin: 10px 0; border: 1px solid #e2e8f0; }
+  </style>
+
+  <!-- Firebase SDK の読み込み -->
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+</head>
+<body>
+  <div class="card">
+
+    <!-- 1. ホーム画面 -->
+    <div id="screen-home" class="screen active">
+      <h1 style="margin-bottom: 5px;">⚔️ トキモン</h1>
+      
+      <div style="background:#f8fafc; padding:12px; border-radius:8px; margin: 10px 0;">
+        <div style="margin-bottom: 8px;">
+          <label><strong>名前: </strong></label>
+          <input type="text" id="player-name-input" value="勇者" maxlength="8" onchange="updatePlayerInfo()">
+        </div>
+        <div>
+          <label><strong>キャラ: </strong></label>
+          <span class="avatar-option selected" onclick="selectAvatar('🧙‍♂️')">🧙‍♂️</span>
+          <span class="avatar-option" onclick="selectAvatar('⚔️')">⚔️</span>
+          <span class="avatar-option" onclick="selectAvatar('🤖')">🤖</span>
+          <span class="avatar-option" onclick="selectAvatar('🐱')">🐱</span>
+        </div>
+      </div>
+
+      <p>所持ポイント: <strong id="home-pt" style="font-size:24px; color:var(--primary);">0</strong> PT</p>
+      
+      <div style="background:#f8fafc; padding:12px; border-radius:8px; margin: 15px 0; text-align:left;">
+        <strong>ステータス概要:</strong><br>
+        HP: <span id="home-hp">50</span> / 攻撃: <span id="home-atk">10</span> / 防御: <span id="home-def">5</span> / 素早さ: <span id="home-spd">10</span>
+      </div>
+
+      <div style="display: flex; flex-direction: column; gap: 10px;">
+        <button onclick="showScreen('screen-training-ready')">⏱️ トレーニング (30秒)</button>
+        <button onclick="showScreen('screen-status')">⚙️ ステータス強化</button>
+        <button onclick="showScreen('screen-battle')">⚔️ オンライン対戦</button>
+      </div>
+    </div>
+
+    <!-- 2-1. トレーニング準備 -->
+    <div id="screen-training-ready" class="screen">
+      <h2>⏱️ 30秒トレーニング</h2>
+      <p>30秒間でできるだけ多くの計算問題を解こう！<br>正解数1問につき <strong>1 PT</strong> 獲得できます。</p>
+      <button onclick="startTraining()">スタート！</button>
+      <br><br>
+      <button class="secondary" onclick="showScreen('screen-home')">ホームへ戻る</button>
+    </div>
+
+    <!-- 2-2. トレーニングプレイ -->
+    <div id="screen-training-play" class="screen">
+      <div class="timer-display">残り: <span id="timer">30</span> 秒</div>
+      <p>現在の正解数: <strong id="current-score" style="color:var(--primary);">0</strong></p>
+      
+      <div style="font-size:28px; margin: 20px 0;">
+        <span id="problem">?</span> = <input type="number" id="answer" autofocus>
+      </div>
+      <button onclick="checkAnswer()">回答</button>
+      <p id="calc-msg" style="height:20px; font-weight:bold; margin-top:10px;"></p>
+    </div>
+
+    <!-- 2-3. トレーニングFB -->
+    <div id="screen-training-fb" class="screen">
+      <h2>🎉 タイムアップ！</h2>
+      <p style="font-size: 18px;">正解数: <strong id="fb-score" style="font-size: 28px; color: var(--primary);">0</strong> 問</p>
+      <p style="font-size: 20px;">獲得: <strong id="fb-pt" style="color: #22c55e;">+0</strong> PT</p>
+      <p id="fb-comment" style="color: #6b7280; font-weight: bold; margin: 15px 0;"></p>
+      
+      <button onclick="showScreen('screen-training-ready')">もう一度挑戦</button>
+      <button class="secondary" onclick="showScreen('screen-home')">ホームへ戻る</button>
+    </div>
+
+    <!-- 3. ステータス強化 -->
+    <div id="screen-status" class="screen">
+      <h2>⚙️ ステータス強化</h2>
+      <p>所持ポイント: <strong id="status-pt" style="font-size:24px; color:var(--primary);">0</strong> PT</p>
+      
+      <div class="status-row">
+        <span>HP (+10): <b id="val-hp">50</b></span>
+        <div class="btn-group">
+          <button class="btn-small danger" onclick="subStat('hp')">-</button>
+          <button class="btn-small" onclick="addStat('hp')">+</button>
+          <button class="btn-reset" onclick="resetStat('hp')">リセット</button>
+        </div>
+      </div>
+      <div class="status-row">
+        <span>攻撃力 (+2): <b id="val-atk">10</b></span>
+        <div class="btn-group">
+          <button class="btn-small danger" onclick="subStat('atk')">-</button>
+          <button class="btn-small" onclick="addStat('atk')">+</button>
+          <button class="btn-reset" onclick="resetStat('atk')">リセット</button>
+        </div>
+      </div>
+      <div class="status-row">
+        <span>防御力 (+1): <b id="val-def">5</b></span>
+        <div class="btn-group">
+          <button class="btn-small danger" onclick="subStat('def')">-</button>
+          <button class="btn-small" onclick="addStat('def')">+</button>
+          <button class="btn-reset" onclick="resetStat('def')">リセット</button>
+        </div>
+      </div>
+      <div class="status-row">
+        <span>素早さ (+1): <b id="val-spd">10</b></span>
+        <div class="btn-group">
+          <button class="btn-small danger" onclick="subStat('spd')">-</button>
+          <button class="btn-small" onclick="addStat('spd')">+</button>
+          <button class="btn-reset" onclick="resetStat('spd')">リセット</button>
+        </div>
+      </div>
+
+      <br>
+      <button class="secondary" onclick="showScreen('screen-home')">ホームへ戻る</button>
+    </div>
+
+    <!-- 4. バトル画面 -->
+    <div id="screen-battle" class="screen">
+      <h2>⚔️ オンライン対戦</h2>
+      
+      <!-- 部屋作成・参加フォーム -->
+      <div id="enemy-select-area">
+        <div class="room-box">
+          <button onclick="createRoom()">🏠 部屋を作成する (ホスト)</button>
+          <div id="created-code-display" style="font-size: 22px; font-weight: bold; color: var(--primary); margin-top: 8px;"></div>
+        </div>
+        
+        <div class="room-box">
+          <input type="text" id="join-room-code" placeholder="4桁コード" maxlength="4" style="width: 110px;">
+          <button onclick="joinRoom()">🔗 部屋に入る</button>
+        </div>
+        
+        <p id="room-status" style="font-size:14px; font-weight:bold; color:#64748b; height:20px; margin: 10px 0;"></p>
+      </div>
+
+      <div id="battle-area" style="display:none; margin-top:15px;">
+        <div style="display:flex; justify-content:space-between; align-items:flex-end;">
+          <!-- プレイヤー表示部 -->
+          <div style="width:48%;">
+            <div id="p-icon" class="char-icon">🧙‍♂️</div>
+            <strong id="p-display-name">勇者</strong>
+            <div class="hp-bar"><div id="p-hp-bar" class="hp-fill" style="width:100%;"></div></div>
+            <span id="p-hp-text">50/50</span>
+            <div id="p-status-buff" style="font-size:11px; color:#eab308; font-weight:bold; height:16px;"></div>
+          </div>
+          <!-- 敵表示部 -->
+          <div style="width:48%;">
+            <div id="e-icon" class="char-icon">🐉</div>
+            <strong id="e-name">対戦相手</strong>
+            <div class="hp-bar"><div id="e-hp-bar" class="hp-fill" style="width:100%;"></div></div>
+            <span id="e-hp-text">??/??</span>
+            <div id="e-status-buff" style="font-size:11px; color:#eab308; font-weight:bold; height:16px;"></div>
+          </div>
+        </div>
+
+        <div class="cmd-grid">
+          <div class="cmd-btn-container">
+            <button id="btn-attack" onclick="playerAction('attack')">⚔️ こうげき</button>
+            <div id="prev-attack" class="cmd-preview">攻撃力 - 相手の防御力</div>
+          </div>
+          <div class="cmd-btn-container">
+            <button id="btn-heal" onclick="playerAction('heal')">🧪 かいふく</button>
+            <div id="prev-heal" class="cmd-preview">最大HPの20%を回復</div>
+          </div>
+          <div class="cmd-btn-container">
+            <button id="btn-charge" onclick="playerAction('charge')">🔥 溜める</button>
+            <div id="prev-charge" class="cmd-preview">次の攻撃力を2倍</div>
+          </div>
+          <div class="cmd-btn-container">
+            <button id="btn-guard" onclick="playerAction('guard')">🛡️ まもる</button>
+            <div id="prev-guard" class="cmd-preview">先制で攻撃を無効化</div>
+          </div>
+        </div>
+
+        <div style="margin-top: 10px;">
+          <button id="btn-surrender" class="secondary" style="width:100%; font-size:14px; padding:8px 0; margin:0;" onclick="surrender()">🏳️ 降参する</button>
+        </div>
+
+        <div id="log" style="margin-top: 12px;"></div>
+      </div>
+
+      <br>
+      <button id="btn-battle-back" class="secondary" onclick="leaveRoom(); showScreen('screen-home');">ホームへ戻る</button>
+    </div>
+
+  </div>
+
+<script>
+  // --- Firebase 初期設定 ---
+  const firebaseConfig = {
+    apiKey: "AIzaSyDV-djYmRPSfCV8NHitKoorCztH3LqLeI8",
+    authDomain: "kisomon-ddfb8.firebaseapp.com",
+    projectId: "kisomon-ddfb8",
+    storageBucket: "kisomon-ddfb8.firebasestorage.app",
+    messagingSenderId: "661403943554",
+    appId: "1:661403943554:web:0b319cedcec300d26a2a9b"
+  };
+    
+  if (!firebase.apps.length) {
+    firebase.initializeApp(firebaseConfig);
+  }
+  const db = firebase.database();
+
+  // 基本ゲーム変数
+  let points = 0;
+  let currentAns = 0;
+  let timerInterval = null;
+  let timeLeft = 30;
+  let trainingScore = 0;
+
+  let playerName = "勇者";
+  let playerAvatar = "🧙‍♂️";
+  let turnCount = 1;
+
+  const BASE_STATS = { hp: 50, atk: 10, def: 5, spd: 10 };
+  const player = { ...BASE_STATS, maxHp: 50, lastAction: '', isCharged: false, isGuarding: false };
+  let enemy = { name: '', avatar: '🐉', maxHp: 0, hp: 0, atk: 0, def: 0, spd: 0, lastAction: '', isCharged: false, isGuarding: false };
+  let inBattle = false;
+
+  // オンライン通信管理用
+  let currentRoomCode = null;
+  let myRole = null; // 'host' or 'guest'
+  let roomRef = null;
+
+  function selectAvatar(icon) {
+    playerAvatar = icon;
+    document.querySelectorAll('.avatar-option').forEach(el => {
+      el.classList.toggle('selected', el.innerText === icon);
+    });
+    document.getElementById('p-icon').innerText = playerAvatar;
+  }
+
+  function updatePlayerInfo() {
+    const inputName = document.getElementById('player-name-input').value.trim();
+    playerName = inputName !== "" ? inputName : "勇者";
+    document.getElementById('p-display-name').innerText = playerName;
+  }
+
+  function showScreen(screenId) {
+    document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+    document.getElementById(screenId).classList.add('active');
+    updateUI();
+  }
+
+  function updateUI() {
+    updatePlayerInfo();
+    document.getElementById('home-pt').innerText = points;
+    document.getElementById('status-pt').innerText = points;
+    
+    document.getElementById('home-hp').innerText = player.maxHp;
+    document.getElementById('home-atk').innerText = player.atk;
+    document.getElementById('home-def').innerText = player.def;
+    document.getElementById('home-spd').innerText = player.spd;
+
+    document.getElementById('val-hp').innerText = player.maxHp;
+    document.getElementById('val-atk').innerText = player.atk;
+    document.getElementById('val-def').innerText = player.def;
+    document.getElementById('val-spd').innerText = player.spd;
+  }
+
+  // --- トレーニング機能 ---
+  function startTraining() {
+    timeLeft = 30;
+    trainingScore = 0;
+    document.getElementById('timer').innerText = timeLeft;
+    document.getElementById('current-score').innerText = trainingScore;
+    document.getElementById('calc-msg').innerText = '';
+    
+    showScreen('screen-training-play');
+    generateProblem();
+
+    clearInterval(timerInterval);
+    timerInterval = setInterval(() => {
+      timeLeft--;
+      document.getElementById('timer').innerText = timeLeft;
+      if (timeLeft <= 0) {
+        clearInterval(timerInterval);
+        endTraining();
+      }
+    }, 1000);
+  }
+
+  function generateProblem() {
+    const ops = ['+', '-', '*'];
+    const op = ops[Math.floor(Math.random() * ops.length)];
+    const getNum = (isMul) => {
+      const val = Math.floor(Math.random() * (isMul ? 12 : 20)) + 1;
+      return Math.random() < 0.5 ? val : -val;
+    };
+    const num1 = getNum(op === '*');
+    const num2 = getNum(op === '*');
+    const formatNum = n => n < 0 ? `(${n})` : n;
+    
+    if (op === '+') currentAns = num1 + num2;
+    if (op === '-') currentAns = num1 - num2;
+    if (op === '*') currentAns = num1 * num2;
+
+    document.getElementById('problem').innerText = `${formatNum(num1)} ${op === '*' ? '×' : op} ${formatNum(num2)}`;
+    document.getElementById('answer').value = '';
+    document.getElementById('answer').focus();
+  }
+
+  function checkAnswer() {
+    const userAns = parseInt(document.getElementById('answer').value, 10);
+    const msg = document.getElementById('calc-msg');
+    if (userAns === currentAns) {
+      trainingScore++;
+      points++;
+      msg.style.color = '#22c55e';
+      msg.innerText = '〇 正解！';
+      document.getElementById('current-score').innerText = trainingScore;
+      generateProblem();
+    } else {
+      msg.style.color = '#ef4444';
+      msg.innerText = '✕ 不正解！';
+    }
+  }
+
+  document.getElementById('answer').addEventListener('keypress', (e) => {
+    if (e.key === 'Enter') checkAnswer();
+  });
+
+  function endTraining() {
+    document.getElementById('fb-score').innerText = trainingScore;
+    document.getElementById('fb-pt').innerText = `+${trainingScore}`;
+    
+    let comment = 'ナイスチャレンジ！';
+    if (trainingScore >= 15) comment = '🔥 素晴らしい計算スピード！';
+    else if (trainingScore >= 8) comment = '👍 かなり調子が上がってきた！';
+    else if (trainingScore < 5) comment = '🌱 コツコツ練習して強くなろう！';
+    document.getElementById('fb-comment').innerText = comment;
+
+    showScreen('screen-training-fb');
+  }
+
+  // --- ステータス強化機能 ---
+  function addStat(type) {
+    if (points < 1) return;
+    points--;
+    if (type === 'hp') { player.maxHp += 10; player.hp += 10; }
+    if (type === 'atk') player.atk += 2;
+    if (type === 'def') player.def += 1;
+    if (type === 'spd') player.spd += 1;
+    updateUI();
+  }
+
+  function subStat(type) {
+    if (type === 'hp' && player.maxHp > BASE_STATS.hp) {
+      player.maxHp -= 10; player.hp -= 10; points++;
+    } else if (type === 'atk' && player.atk > BASE_STATS.atk) {
+      player.atk -= 2; points++;
+    } else if (type === 'def' && player.def > BASE_STATS.def) {
+      player.def -= 1; points++;
+    } else if (type === 'spd' && player.spd > BASE_STATS.spd) {
+      player.spd -= 1; points++;
+    }
+    updateUI();
+  }
+
+  function resetStat(type) {
+    if (type === 'hp') {
+      const addedCount = (player.maxHp - BASE_STATS.hp) / 10;
+      if (addedCount > 0) { points += addedCount; player.maxHp = BASE_STATS.hp; player.hp = BASE_STATS.hp; }
+    } else if (type === 'atk') {
+      const addedCount = (player.atk - BASE_STATS.atk) / 2;
+      if (addedCount > 0) { points += addedCount; player.atk = BASE_STATS.atk; }
+    } else if (type === 'def') {
+      const addedCount = (player.def - BASE_STATS.def) / 1;
+      if (addedCount > 0) { points += addedCount; player.def = BASE_STATS.def; }
+    } else if (type === 'spd') {
+      const addedCount = (player.spd - BASE_STATS.spd) / 1;
+      if (addedCount > 0) { points += addedCount; player.spd = BASE_STATS.spd; }
+    }
+    updateUI();
+  }
+
+  // --- オンライン対戦 部屋管理 ---
+  function createRoom() {
+    const code = Math.floor(1000 + Math.random() * 9000).toString();
+    currentRoomCode = code;
+    myRole = 'host';
+    roomRef = db.ref('rooms/' + code);
+
+    document.getElementById('created-code-display').innerText = `部屋コード: ${code}`;
+    document.getElementById('room-status').innerText = '対戦相手を待っています...';
+
+    // 部屋データ初期化
+    roomRef.set({
+      status: 'waiting',
+      host: { name: playerName, avatar: playerAvatar, maxHp: player.maxHp, atk: player.atk, def: player.def, spd: player.spd },
+      turn: 1
+    });
+
+    // 接続維持 & 離脱時の自動削除
+    roomRef.onDisconnect().remove();
+
+    listenRoom();
+  }
+
+  function joinRoom() {
+    const code = document.getElementById('join-room-code').value.trim();
+    if (code.length !== 4) return alert('4桁の部屋コードを入力してください');
+
+    currentRoomCode = code;
+    myRole = 'guest';
+    roomRef = db.ref('rooms/' + code);
+
+    roomRef.once('value', snapshot => {
+      if (!snapshot.exists()) return alert('部屋が見つかりません');
+      const data = snapshot.val();
+      if (data.status !== 'waiting') return alert('満員またはすでに対戦中を開始しています');
+
+      // ゲスト情報書き込み
+      roomRef.update({
+        status: 'playing',
+        guest: { name: playerName, avatar: playerAvatar, maxHp: player.maxHp, atk: player.atk, def: player.def, spd: player.spd }
+      });
+
+      listenRoom();
+    });
+  }
+
+  function leaveRoom() {
+    if (roomRef) {
+      roomRef.off();
+      if (myRole === 'host') roomRef.remove();
+      roomRef = null;
+    }
+    currentRoomCode = null;
+    myRole = null;
+    document.getElementById('created-code-display').innerText = '';
+    document.getElementById('room-status').innerText = '';
+  }
+
+  function listenRoom() {
+    roomRef.on('value', snapshot => {
+      const data = snapshot.val();
+      if (!data) {
+        if (inBattle) {
+          alert('対戦相手が退出しました');
+          finishBattle();
+        }
+        return;
+      }
+
+      // 対戦開始検知
+      if (data.status === 'playing' && !inBattle) {
+        startOnlineBattle(data);
+      }
+
+      // 相手のコマンド入力検知（ホスト側が結果を判定）
+      if (inBattle && myRole === 'host' && data.hostCmd && data.guestCmd && !data.resolving) {
+        roomRef.update({ resolving: true });
+        resolveTurn(data.hostCmd, data.guestCmd);
+      }
+
+      // ターン結果更新検知
+      if (inBattle && data.turnResult && data.turnResult.turn === turnCount) {
+        applyTurnResult(data.turnResult);
+      }
+
+      // 降参検知
+      if (inBattle && data.surrender) {
+        if (data.surrender !== myRole) {
+          logMsg(`🏳️ ${enemy.name}が 降参した！`);
+          logMsg('🎉 <strong>勝利した！</strong>');
+          finishBattle();
+        }
+      }
+    });
+  }
+
+  // --- オンライン対戦 ロジック ---
+  function startOnlineBattle(data) {
+    inBattle = true;
+    turnCount = 1;
+    player.hp = player.maxHp;
+    player.lastAction = '';
+    player.isCharged = false;
+    player.isGuarding = false;
+
+    const oppData = (myRole === 'host') ? data.guest : data.host;
+    enemy = {
+      name: oppData.name,
+      avatar: oppData.avatar,
+      maxHp: oppData.maxHp,
+      hp: oppData.maxHp,
+      atk: oppData.atk,
+      def: oppData.def,
+      spd: oppData.spd,
+      lastAction: '', isCharged: false, isGuarding: false
+    };
+
+    document.getElementById('enemy-select-area').style.display = 'none';
+    document.getElementById('btn-battle-back').style.display = 'none';
+    document.getElementById('battle-area').style.display = 'block';
+
+    document.getElementById('p-icon').innerText = playerAvatar;
+    document.getElementById('p-display-name').innerText = playerName;
+    document.getElementById('e-icon').innerText = enemy.avatar;
+    document.getElementById('e-name').innerText = enemy.name;
+
+    document.getElementById('log').innerHTML = `${enemy.name} との対戦が始まりました！`;
+    updateCmdButtons();
+    updateHpDisplay();
+  }
+
+  function playerAction(pAction) {
+    if (!inBattle) return;
+    setAllButtonsDisabled(true);
+    logMsg('選択完了。相手の行動を待っています...');
+
+    const updateObj = {};
+    updateObj[myRole + 'Cmd'] = pAction;
+    roomRef.update(updateObj);
+  }
+
+  // ホストが両者の入力を判定
+  function resolveTurn(hostCmd, guestCmd) {
+    roomRef.update({
+      turnResult: {
+        turn: turnCount,
+        hostCmd: hostCmd,
+        guestCmd: guestCmd
+      },
+      hostCmd: null,
+      guestCmd: null,
+      resolving: false
+    });
+  }
+
+  // 結果の表示とデータ同期
+  function applyTurnResult(result) {
+    logMsg(`<strong>--- 第 ${turnCount} ターン ---</strong>`);
+    
+    const myCmd = (myRole === 'host') ? result.hostCmd : result.guestCmd;
+    const oppCmd = (myRole === 'host') ? result.guestCmd : result.hostCmd;
+
+    const pPriority = (myCmd === 'guard') ? 1 : 0;
+    const ePriority = (oppCmd === 'guard') ? 1 : 0;
+
+    let playerFirst = false;
+    if (pPriority > ePriority) playerFirst = true;
+    else if (ePriority > pPriority) playerFirst = false;
+    else playerFirst = player.spd >= enemy.spd;
+
+    if (playerFirst) {
+      processAction(player, enemy, myCmd, playerName);
+      if (enemy.hp > 0) {
+        setTimeout(() => {
+          processAction(enemy, player, oppCmd, enemy.name);
+          endTurn();
+        }, 800);
+      } else {
+        endTurn();
+      }
+    } else {
+      processAction(enemy, player, oppCmd, enemy.name);
+      if (player.hp > 0) {
+        setTimeout(() => {
+          processAction(player, enemy, myCmd, playerName);
+          endTurn();
+        }, 800);
+      } else {
+        endTurn();
+      }
+    }
+  }
+
+  function processAction(actor, target, actionName, actorLabel) {
+    if (actionName === 'guard') {
+      actor.isGuarding = true;
+      logMsg(`${actorLabel}は **まもる** の態勢に入った！`);
+    } 
+    else if (actionName === 'charge') {
+      actor.isCharged = true;
+      logMsg(`${actorLabel}は **力を溜めた**！`);
+    } 
+    else if (actionName === 'heal') {
+      const healAmt = Math.max(10, Math.floor(actor.maxHp * 0.2));
+      actor.hp = Math.min(actor.maxHp, actor.hp + healAmt);
+      logMsg(`${actorLabel}は **かいふく** を使った！ 体力が ${healAmt} 回復した！`);
+    }
+    else if (actionName === 'attack') {
+      let baseAtk = actor.atk;
+      if (actor.isCharged) {
+        baseAtk *= 2;
+        actor.isCharged = false;
+      }
+
+      if (target.isGuarding) {
+        logMsg(`${actorLabel}の攻撃！...しかし相手は **まもって** いる！`);
+      } else {
+        const damage = Math.max(1, baseAtk - target.def);
+        logMsg(`${actorLabel}の **こうげき**！ ${damage} のダメージ！`);
+        target.hp = Math.max(0, target.hp - damage);
+      }
+    }
+    
+    actor.lastAction = actionName;
+    updateHpDisplay();
+  }
+
+  function endTurn() {
+    player.isGuarding = false;
+    enemy.isGuarding = false;
+    updateHpDisplay();
+
+    if (enemy.hp <= 0) {
+      logMsg('🎉 <strong>勝利した！</strong>');
+      finishBattle();
+    } else if (player.hp <= 0) {
+      logMsg('💀 <strong>敗北した...</strong>');
+      finishBattle();
+    } else {
+      turnCount++;
+      updateCmdButtons();
+    }
+  }
+
+  function surrender() {
+    if (!inBattle) return;
+    roomRef.update({ surrender: myRole });
+    logMsg(`🏳️ ${playerName}は <strong>降参した...</strong>`);
+    logMsg('💀 <strong>敗北した...</strong>');
+    finishBattle();
+  }
+
+  function finishBattle() {
+    inBattle = false;
+    setAllButtonsDisabled(true);
+    document.getElementById('enemy-select-area').style.display = 'block';
+    document.getElementById('btn-battle-back').style.display = 'inline-block';
+    leaveRoom();
+  }
+
+  function updateCmdButtons() {
+    document.getElementById('btn-guard').disabled = (player.lastAction === 'guard');
+    document.getElementById('btn-charge').disabled = (player.lastAction === 'charge');
+    document.getElementById('btn-attack').disabled = false;
+    document.getElementById('btn-heal').disabled = false;
+    document.getElementById('btn-surrender').disabled = false;
+  }
+
+  function setAllButtonsDisabled(disabled) {
+    document.getElementById('btn-attack').disabled = disabled;
+    document.getElementById('btn-heal').disabled = disabled;
+    document.getElementById('btn-charge').disabled = disabled;
+    document.getElementById('btn-guard').disabled = disabled;
+    document.getElementById('btn-surrender').disabled = disabled;
+  }
+
+  function updateHpDisplay() {
+    const pPct = Math.max(0, (player.hp / player.maxHp) * 100);
+    const ePct = Math.max(0, (enemy.hp / enemy.maxHp) * 100);
+    
+    document.getElementById('p-hp-bar').style.width = pPct + '%';
+    document.getElementById('e-hp-bar').style.width = ePct + '%';
+    document.getElementById('p-hp-text').innerText = `${player.hp}/${player.maxHp}`;
+    document.getElementById('e-hp-text').innerText = `${enemy.hp}/${enemy.maxHp}`;
+
+    document.getElementById('p-status-buff').innerText = player.isCharged ? '🔥 攻撃力2倍' : (player.isGuarding ? '🛡️ ガード中' : '');
+    document.getElementById('e-status-buff').innerText = enemy.isCharged ? '🔥 攻撃力2倍' : (enemy.isGuarding ? '🛡️ ガード中' : '');
+  }
+
+  function logMsg(msg) {
+    const log = document.getElementById('log');
+    log.innerHTML += `<br>${msg}`;
+    log.scrollTop = log.scrollHeight;
+  }
+
+  updateUI();
+</script>
+</body>
+</html>

@@ -43,7 +43,7 @@
     .avatar-option.selected { border-color: var(--primary); background: #e0e7ff; }
     .char-icon { font-size: 36px; line-height: 1; margin-bottom: 2px; }
     
-    /* オンライン対戦用 UI */
+    /* 対戦用 UI */
     .room-box { background: #f8fafc; padding: 12px; border-radius: 8px; margin: 10px 0; border: 1px solid #e2e8f0; }
   </style>
 
@@ -82,7 +82,7 @@
       <div style="display: flex; flex-direction: column; gap: 10px;">
         <button onclick="showScreen('screen-training-ready')">⏱️ トレーニング (30秒)</button>
         <button onclick="showScreen('screen-status')">⚙️ ステータス強化</button>
-        <button onclick="showScreen('screen-battle')">⚔️ オンライン対戦</button>
+        <button onclick="showScreen('screen-battle')">⚔️ 対戦モード</button>
       </div>
     </div>
 
@@ -162,10 +162,17 @@
 
     <!-- 4. バトル画面 -->
     <div id="screen-battle" class="screen">
-      <h2>⚔️ オンライン対戦</h2>
+      <h2>⚔️ 対戦モード</h2>
       
-      <!-- 部屋作成・参加フォーム -->
+      <!-- 部屋作成・参加・CPU選択フォーム -->
       <div id="enemy-select-area">
+        <!-- CPU対戦セクション -->
+        <div class="room-box" style="background: #e0e7ff; border-color: #c7d2fe;">
+          <button style="background: #4338ca; width: 100%; margin: 0;" onclick="startCpuBattle()">🤖 CPUと対戦する (ソロ)</button>
+        </div>
+
+        <p style="margin: 10px 0; color: #64748b; font-size: 13px;">— またはオンライン対戦 —</p>
+
         <div class="room-box">
           <button onclick="createRoom()">🏠 部屋を作成する (ホスト)</button>
           <div id="created-code-display" style="font-size: 22px; font-weight: bold; color: var(--primary); margin-top: 8px;"></div>
@@ -263,6 +270,14 @@
   const player = { ...BASE_STATS, maxHp: 50, lastAction: '', isCharged: false, isGuarding: false };
   let enemy = { name: '', avatar: '🐉', maxHp: 0, hp: 0, atk: 0, def: 0, spd: 0, lastAction: '', isCharged: false, isGuarding: false };
   let inBattle = false;
+  let isCpuBattle = false; // CPU戦フラグ
+
+  // CPU対戦用プリセット一覧
+  const CPU_PRESETS = [
+    { name: '見習いゴブリン', avatar: '👺', hp: 40, atk: 8, def: 3, spd: 8 },
+    { name: 'ライバル勇者', avatar: '⚔️', hp: 55, atk: 11, def: 5, spd: 11 },
+    { name: 'ドラゴンキング', avatar: '🐉', hp: 75, atk: 14, def: 7, spd: 9 }
+  ];
 
   // オンライン通信管理用
   let currentRoomCode = null;
@@ -421,8 +436,65 @@
     updateUI();
   }
 
+  // --- CPU対戦 ロジック ---
+  function startCpuBattle() {
+    isCpuBattle = true;
+    inBattle = true;
+    turnCount = 1;
+
+    player.hp = player.maxHp;
+    player.lastAction = '';
+    player.isCharged = false;
+    player.isGuarding = false;
+
+    // プレイヤーのステータスに合わせて難易度を選択
+    const preset = CPU_PRESETS[Math.floor(Math.random() * CPU_PRESETS.length)];
+    enemy = {
+      name: preset.name,
+      avatar: preset.avatar,
+      maxHp: preset.hp,
+      hp: preset.hp,
+      atk: preset.atk,
+      def: preset.def,
+      spd: preset.spd,
+      lastAction: '',
+      isCharged: false,
+      isGuarding: false
+    };
+
+    document.getElementById('enemy-select-area').style.display = 'none';
+    document.getElementById('btn-battle-back').style.display = 'none';
+    document.getElementById('battle-area').style.display = 'block';
+
+    document.getElementById('p-icon').innerText = playerAvatar;
+    document.getElementById('p-display-name').innerText = playerName;
+    document.getElementById('e-icon').innerText = enemy.avatar;
+    document.getElementById('e-name').innerText = enemy.name;
+
+    document.getElementById('log').innerHTML = `${enemy.name} が 現れた！`;
+    updateCmdButtons();
+    updateHpDisplay();
+  }
+
+  function chooseCpuAction() {
+    const actions = ['attack', 'heal', 'charge', 'guard'];
+    let validActions = actions.filter(act => {
+      if (act === 'guard' && enemy.lastAction === 'guard') return false;
+      if (act === 'charge' && enemy.lastAction === 'charge') return false;
+      return true;
+    });
+
+    // HPが高い時は回復の選択確率を下げる
+    if (enemy.hp / enemy.maxHp > 0.8) {
+      validActions = validActions.filter(act => act !== 'heal');
+    }
+
+    return validActions[Math.floor(Math.random() * validActions.length)];
+  }
+
   // --- オンライン対戦 部屋管理 ---
   function createRoom() {
+    isCpuBattle = false;
     const code = Math.floor(1000 + Math.random() * 9000).toString();
     currentRoomCode = code;
     myRole = 'host';
@@ -431,20 +503,18 @@
     document.getElementById('created-code-display').innerText = `部屋コード: ${code}`;
     document.getElementById('room-status').innerText = '対戦相手を待っています...';
 
-    // 部屋データ初期化
     roomRef.set({
       status: 'waiting',
       host: { name: playerName, avatar: playerAvatar, maxHp: player.maxHp, atk: player.atk, def: player.def, spd: player.spd },
       turn: 1
     });
 
-    // 接続維持 & 離脱時の自動削除
     roomRef.onDisconnect().remove();
-
     listenRoom();
   }
 
   function joinRoom() {
+    isCpuBattle = false;
     const code = document.getElementById('join-room-code').value.trim();
     if (code.length !== 4) return alert('4桁の部屋コードを入力してください');
 
@@ -457,7 +527,6 @@
       const data = snapshot.val();
       if (data.status !== 'waiting') return alert('満員またはすでに対戦中を開始しています');
 
-      // ゲスト情報書き込み
       roomRef.update({
         status: 'playing',
         guest: { name: playerName, avatar: playerAvatar, maxHp: player.maxHp, atk: player.atk, def: player.def, spd: player.spd }
@@ -475,6 +544,7 @@
     }
     currentRoomCode = null;
     myRole = null;
+    isCpuBattle = false;
     document.getElementById('created-code-display').innerText = '';
     document.getElementById('room-status').innerText = '';
   }
@@ -483,30 +553,26 @@
     roomRef.on('value', snapshot => {
       const data = snapshot.val();
       if (!data) {
-        if (inBattle) {
+        if (inBattle && !isCpuBattle) {
           alert('対戦相手が退出しました');
           finishBattle();
         }
         return;
       }
 
-      // 対戦開始検知
       if (data.status === 'playing' && !inBattle) {
         startOnlineBattle(data);
       }
 
-      // 相手のコマンド入力検知（ホスト側が結果を判定）
       if (inBattle && myRole === 'host' && data.hostCmd && data.guestCmd && !data.resolving) {
         roomRef.update({ resolving: true });
         resolveTurn(data.hostCmd, data.guestCmd);
       }
 
-      // ターン結果更新検知
       if (inBattle && data.turnResult && data.turnResult.turn === turnCount) {
         applyTurnResult(data.turnResult);
       }
 
-      // 降参検知
       if (inBattle && data.surrender) {
         if (data.surrender !== myRole) {
           logMsg(`🏳️ ${enemy.name}が 降参した！`);
@@ -517,7 +583,7 @@
     });
   }
 
-  // --- オンライン対戦 ロジック ---
+  // --- 対戦共通 実行ロジック ---
   function startOnlineBattle(data) {
     inBattle = true;
     turnCount = 1;
@@ -555,14 +621,54 @@
   function playerAction(pAction) {
     if (!inBattle) return;
     setAllButtonsDisabled(true);
-    logMsg('選択完了。相手の行動を待っています...');
 
-    const updateObj = {};
-    updateObj[myRole + 'Cmd'] = pAction;
-    roomRef.update(updateObj);
+    if (isCpuBattle) {
+      // CPU戦のターン処理
+      const cpuCmd = chooseCpuAction();
+      applyCpuTurnResult(pAction, cpuCmd);
+    } else {
+      // オンライン戦のターン処理
+      logMsg('選択完了。相手の行動を待っています...');
+      const updateObj = {};
+      updateObj[myRole + 'Cmd'] = pAction;
+      roomRef.update(updateObj);
+    }
   }
 
-  // ホストが両者の入力を判定
+  function applyCpuTurnResult(pCmd, cpuCmd) {
+    logMsg(`<strong>--- 第 ${turnCount} ターン ---</strong>`);
+
+    const pPriority = (pCmd === 'guard') ? 1 : 0;
+    const ePriority = (cpuCmd === 'guard') ? 1 : 0;
+
+    let playerFirst = false;
+    if (pPriority > ePriority) playerFirst = true;
+    else if (ePriority > pPriority) playerFirst = false;
+    else playerFirst = player.spd >= enemy.spd;
+
+    if (playerFirst) {
+      processAction(player, enemy, pCmd, playerName);
+      if (enemy.hp > 0) {
+        setTimeout(() => {
+          processAction(enemy, player, cpuCmd, enemy.name);
+          endTurn();
+        }, 800);
+      } else {
+        endTurn();
+      }
+    } else {
+      processAction(enemy, player, cpuCmd, enemy.name);
+      if (player.hp > 0) {
+        setTimeout(() => {
+          processAction(player, enemy, pCmd, playerName);
+          endTurn();
+        }, 800);
+      } else {
+        endTurn();
+      }
+    }
+  }
+
   function resolveTurn(hostCmd, guestCmd) {
     roomRef.update({
       turnResult: {
@@ -576,7 +682,6 @@
     });
   }
 
-  // 結果の表示とデータ同期
   function applyTurnResult(result) {
     logMsg(`<strong>--- 第 ${turnCount} ターン ---</strong>`);
     
@@ -667,7 +772,9 @@
 
   function surrender() {
     if (!inBattle) return;
-    roomRef.update({ surrender: myRole });
+    if (!isCpuBattle && roomRef) {
+      roomRef.update({ surrender: myRole });
+    }
     logMsg(`🏳️ ${playerName}は <strong>降参した...</strong>`);
     logMsg('💀 <strong>敗北した...</strong>');
     finishBattle();

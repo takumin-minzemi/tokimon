@@ -45,6 +45,13 @@
     
     /* 対戦用 UI */
     .room-box { background: #f8fafc; padding: 12px; border-radius: 8px; margin: 10px 0; border: 1px solid #e2e8f0; }
+
+    /* 勝敗画面スタイル */
+    .result-banner { font-size: 48px; margin: 15px 0 5px 0; }
+    .result-title { font-size: 28px; font-weight: bold; margin-bottom: 15px; }
+
+    /* CPU設定用 */
+    .cpu-stat-preview { font-size: 13px; color: #475569; background: #e0e7ff; padding: 8px; border-radius: 6px; margin: 10px 0; }
   </style>
 
   <!-- Firebase SDK の読み込み -->
@@ -168,7 +175,16 @@
       <div id="enemy-select-area">
         <!-- CPU対戦セクション -->
         <div class="room-box" style="background: #e0e7ff; border-color: #c7d2fe;">
-          <button style="background: #4338ca; width: 100%; margin: 0;" onclick="startCpuBattle()">🤖 CPUと対戦する (ソロ)</button>
+          <label style="font-weight: bold; display: block; margin-bottom: 5px;">🤖 CPUのレベル設定（付与PT）</label>
+          <div style="display: flex; justify-content: center; align-items: center; gap: 8px; margin-bottom: 8px;">
+            <span>Lv.</span>
+            <input type="number" id="cpu-level-input" value="10" min="1" max="99" style="width: 80px;" onchange="updateCpuPreview()">
+            <span>（<span id="cpu-pt-text">10</span> PT分強化）</span>
+          </div>
+          <div id="cpu-stat-preview" class="cpu-stat-preview">
+            想定ステータス: HP 70 / 攻撃 14 / 防御 7 / 素早さ 12
+          </div>
+          <button style="background: #4338ca; width: 100%; margin: 0;" onclick="startCpuBattle()">🤖 このレベルのCPUと対戦</button>
         </div>
 
         <p style="margin: 10px 0; color: #64748b; font-size: 13px;">— またはオンライン対戦 —</p>
@@ -236,6 +252,25 @@
       <button id="btn-battle-back" class="secondary" onclick="leaveRoom(); showScreen('screen-home');">ホームへ戻る</button>
     </div>
 
+    <!-- 5. 勝利画面 -->
+    <div id="screen-win" class="screen">
+      <div class="result-banner">🏆</div>
+      <div class="result-title" style="color: #22c55e;">VICTORY!</div>
+      <p style="font-size: 18px; margin-bottom: 25px;"><strong id="win-enemy-name">相手</strong> に勝利した！</p>
+      <button onclick="resetBattleUI(); showScreen('screen-battle');">もう一度対戦する</button>
+      <button class="secondary" onclick="resetBattleUI(); showScreen('screen-home');">ホームへ戻る</button>
+    </div>
+
+    <!-- 6. 敗北画面 -->
+    <div id="screen-lose" class="screen">
+      <div class="result-banner">💀</div>
+      <div class="result-title" style="color: #ef4444;">DEFEAT...</div>
+      <p style="font-size: 18px;"><strong id="lose-enemy-name">相手</strong> に敗北してしまった...</p>
+      <p style="color: #6b7280; margin: 15px 0 25px 0;">トレーニングでステータスを強化して出直そう！</p>
+      <button onclick="resetBattleUI(); showScreen('screen-battle');">もう一度対戦する</button>
+      <button class="secondary" onclick="resetBattleUI(); showScreen('screen-home');">ホームへ戻る</button>
+    </div>
+
   </div>
 
 <script>
@@ -270,14 +305,7 @@
   const player = { ...BASE_STATS, maxHp: 50, lastAction: '', isCharged: false, isGuarding: false };
   let enemy = { name: '', avatar: '🐉', maxHp: 0, hp: 0, atk: 0, def: 0, spd: 0, lastAction: '', isCharged: false, isGuarding: false };
   let inBattle = false;
-  let isCpuBattle = false; // CPU戦フラグ
-
-  // CPU対戦用プリセット一覧
-  const CPU_PRESETS = [
-    { name: '見習いゴブリン', avatar: '👺', hp: 40, atk: 8, def: 3, spd: 8 },
-    { name: 'ライバル勇者', avatar: '⚔️', hp: 55, atk: 11, def: 5, spd: 11 },
-    { name: 'ドラゴンキング', avatar: '🐉', hp: 75, atk: 14, def: 7, spd: 9 }
-  ];
+  let isCpuBattle = false;
 
   // オンライン通信管理用
   let currentRoomCode = null;
@@ -301,6 +329,7 @@
   function showScreen(screenId) {
     document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
     document.getElementById(screenId).classList.add('active');
+    if (screenId === 'screen-battle') updateCpuPreview();
     updateUI();
   }
 
@@ -436,7 +465,36 @@
     updateUI();
   }
 
-  // --- CPU対戦 ロジック ---
+  // --- CPU自動ステータス生成 ロジック ---
+  function generateCpuStats(level) {
+    let pts = Math.max(1, Math.min(99, level));
+    
+    // 基本割り振り比率（HP:25%, 攻撃:35%, 防御:20%, 素早さ:20%）
+    let hpPts = Math.floor(pts * 0.25);
+    let atkPts = Math.floor(pts * 0.35);
+    let defPts = Math.floor(pts * 0.20);
+    let spdPts = pts - (hpPts + atkPts + defPts); // 端数は素早さに
+
+    return {
+      hp: BASE_STATS.hp + (hpPts * 10),
+      atk: BASE_STATS.atk + (atkPts * 2),
+      def: BASE_STATS.def + (defPts * 1),
+      spd: BASE_STATS.spd + (spdPts * 1)
+    };
+  }
+
+  function updateCpuPreview() {
+    let lvl = parseInt(document.getElementById('cpu-level-input').value, 10);
+    if (isNaN(lvl) || lvl < 1) lvl = 1;
+    if (lvl > 99) lvl = 99;
+    document.getElementById('cpu-level-input').value = lvl;
+    document.getElementById('cpu-pt-text').innerText = lvl;
+
+    const stats = generateCpuStats(lvl);
+    document.getElementById('cpu-stat-preview').innerText = 
+      `想定ステータス: HP ${stats.hp} / 攻撃 ${stats.atk} / 防御 ${stats.def} / 素早さ ${stats.spd}`;
+  }
+
   function startCpuBattle() {
     isCpuBattle = true;
     inBattle = true;
@@ -447,16 +505,25 @@
     player.isCharged = false;
     player.isGuarding = false;
 
-    // プレイヤーのステータスに合わせて難易度を選択
-    const preset = CPU_PRESETS[Math.floor(Math.random() * CPU_PRESETS.length)];
+    let lvl = parseInt(document.getElementById('cpu-level-input').value, 10) || 10;
+    const cpuStats = generateCpuStats(lvl);
+
+    const monsters = [
+      { name: `Lv.${lvl} ゴブリン`, avatar: '👺' },
+      { name: `Lv.${lvl} ナイト`, avatar: '⚔️' },
+      { name: `Lv.${lvl} ドラゴン`, avatar: '🐉' },
+      { name: `Lv.${lvl} キラーロボ`, avatar: '🤖' }
+    ];
+    const selectedMonster = monsters[Math.floor(Math.random() * monsters.length)];
+
     enemy = {
-      name: preset.name,
-      avatar: preset.avatar,
-      maxHp: preset.hp,
-      hp: preset.hp,
-      atk: preset.atk,
-      def: preset.def,
-      spd: preset.spd,
+      name: selectedMonster.name,
+      avatar: selectedMonster.avatar,
+      maxHp: cpuStats.hp,
+      hp: cpuStats.hp,
+      atk: cpuStats.atk,
+      def: cpuStats.def,
+      spd: cpuStats.spd,
       lastAction: '',
       isCharged: false,
       isGuarding: false
@@ -484,7 +551,6 @@
       return true;
     });
 
-    // HPが高い時は回復の選択確率を下げる
     if (enemy.hp / enemy.maxHp > 0.8) {
       validActions = validActions.filter(act => act !== 'heal');
     }
@@ -555,7 +621,7 @@
       if (!data) {
         if (inBattle && !isCpuBattle) {
           alert('対戦相手が退出しました');
-          finishBattle();
+          finishBattle('win');
         }
         return;
       }
@@ -576,8 +642,7 @@
       if (inBattle && data.surrender) {
         if (data.surrender !== myRole) {
           logMsg(`🏳️ ${enemy.name}が 降参した！`);
-          logMsg('🎉 <strong>勝利した！</strong>');
-          finishBattle();
+          finishBattle('win');
         }
       }
     });
@@ -623,11 +688,9 @@
     setAllButtonsDisabled(true);
 
     if (isCpuBattle) {
-      // CPU戦のターン処理
       const cpuCmd = chooseCpuAction();
       applyCpuTurnResult(pAction, cpuCmd);
     } else {
-      // オンライン戦のターン処理
       logMsg('選択完了。相手の行動を待っています...');
       const updateObj = {};
       updateObj[myRole + 'Cmd'] = pAction;
@@ -759,11 +822,9 @@
     updateHpDisplay();
 
     if (enemy.hp <= 0) {
-      logMsg('🎉 <strong>勝利した！</strong>');
-      finishBattle();
+      finishBattle('win');
     } else if (player.hp <= 0) {
-      logMsg('💀 <strong>敗北した...</strong>');
-      finishBattle();
+      finishBattle('lose');
     } else {
       turnCount++;
       updateCmdButtons();
@@ -776,16 +837,30 @@
       roomRef.update({ surrender: myRole });
     }
     logMsg(`🏳️ ${playerName}は <strong>降参した...</strong>`);
-    logMsg('💀 <strong>敗北した...</strong>');
-    finishBattle();
+    finishBattle('lose');
   }
 
-  function finishBattle() {
+  function finishBattle(result) {
     inBattle = false;
     setAllButtonsDisabled(true);
+
+    setTimeout(() => {
+      leaveRoom();
+      if (result === 'win') {
+        document.getElementById('win-enemy-name').innerText = enemy.name;
+        showScreen('screen-win');
+      } else {
+        document.getElementById('lose-enemy-name').innerText = enemy.name;
+        showScreen('screen-lose');
+      }
+    }, 1200);
+  }
+
+  function resetBattleUI() {
     document.getElementById('enemy-select-area').style.display = 'block';
+    document.getElementById('battle-area').style.display = 'none';
     document.getElementById('btn-battle-back').style.display = 'inline-block';
-    leaveRoom();
+    updateCpuPreview();
   }
 
   function updateCmdButtons() {

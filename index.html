@@ -49,9 +49,6 @@
     /* 勝敗画面スタイル */
     .result-banner { font-size: 48px; margin: 15px 0 5px 0; }
     .result-title { font-size: 28px; font-weight: bold; margin-bottom: 15px; }
-
-    /* CPU設定用 */
-    .cpu-stat-preview { font-size: 13px; color: #475569; background: #e0e7ff; padding: 8px; border-radius: 6px; margin: 10px 0; }
   </style>
 
   <!-- Firebase SDK の読み込み -->
@@ -176,13 +173,10 @@
         <!-- CPU対戦セクション -->
         <div class="room-box" style="background: #e0e7ff; border-color: #c7d2fe;">
           <label style="font-weight: bold; display: block; margin-bottom: 5px;">🤖 CPUのレベル設定（付与PT）</label>
-          <div style="display: flex; justify-content: center; align-items: center; gap: 8px; margin-bottom: 8px;">
+          <div style="display: flex; justify-content: center; align-items: center; gap: 8px; margin-bottom: 10px;">
             <span>Lv.</span>
-            <input type="number" id="cpu-level-input" value="10" min="1" max="99" style="width: 80px;" onchange="updateCpuPreview()">
+            <input type="number" id="cpu-level-input" value="10" min="1" style="width: 100px;" onchange="updateCpuLevel()">
             <span>（<span id="cpu-pt-text">10</span> PT分強化）</span>
-          </div>
-          <div id="cpu-stat-preview" class="cpu-stat-preview">
-            想定ステータス: HP 70 / 攻撃 14 / 防御 7 / 素早さ 12
           </div>
           <button style="background: #4338ca; width: 100%; margin: 0;" onclick="startCpuBattle()">🤖 このレベルのCPUと対戦</button>
         </div>
@@ -329,7 +323,7 @@
   function showScreen(screenId) {
     document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
     document.getElementById(screenId).classList.add('active');
-    if (screenId === 'screen-battle') updateCpuPreview();
+    if (screenId === 'screen-battle') updateCpuLevel();
     updateUI();
   }
 
@@ -467,13 +461,13 @@
 
   // --- CPU自動ステータス生成 ロジック ---
   function generateCpuStats(level) {
-    let pts = Math.max(1, Math.min(99, level));
+    let pts = Math.max(1, level); // 上限を無くし、最小値のみ1に固定
     
     // 基本割り振り比率（HP:25%, 攻撃:35%, 防御:20%, 素早さ:20%）
     let hpPts = Math.floor(pts * 0.25);
     let atkPts = Math.floor(pts * 0.35);
     let defPts = Math.floor(pts * 0.20);
-    let spdPts = pts - (hpPts + atkPts + defPts); // 端数は素早さに
+    let spdPts = pts - (hpPts + atkPts + defPts);
 
     return {
       hp: BASE_STATS.hp + (hpPts * 10),
@@ -483,16 +477,11 @@
     };
   }
 
-  function updateCpuPreview() {
+  function updateCpuLevel() {
     let lvl = parseInt(document.getElementById('cpu-level-input').value, 10);
     if (isNaN(lvl) || lvl < 1) lvl = 1;
-    if (lvl > 99) lvl = 99;
     document.getElementById('cpu-level-input').value = lvl;
     document.getElementById('cpu-pt-text').innerText = lvl;
-
-    const stats = generateCpuStats(lvl);
-    document.getElementById('cpu-stat-preview').innerText = 
-      `想定ステータス: HP ${stats.hp} / 攻撃 ${stats.atk} / 防御 ${stats.def} / 素早さ ${stats.spd}`;
   }
 
   function startCpuBattle() {
@@ -860,7 +849,7 @@
     document.getElementById('enemy-select-area').style.display = 'block';
     document.getElementById('battle-area').style.display = 'none';
     document.getElementById('btn-battle-back').style.display = 'inline-block';
-    updateCpuPreview();
+    updateCpuLevel();
   }
 
   function updateCmdButtons() {

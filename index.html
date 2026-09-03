@@ -19,6 +19,7 @@
     button:disabled { background: #9ca3af; cursor: not-allowed; }
     button.secondary { background: #6b7280; }
     button.danger { background: #ef4444; }
+    button.success { background: #10b981; }
     
     input[type="number"] { font-size: 20px; padding: 6px; border: 2px solid #cbd5e1; border-radius: 8px; text-align: center; width: 100px; }
     input[type="text"] { font-size: 16px; padding: 8px; width: 180px; text-align: center; border: 2px solid #cbd5e1; border-radius: 8px; }
@@ -43,10 +44,8 @@
     .avatar-option.selected { border-color: var(--primary); background: #e0e7ff; }
     .char-icon { font-size: 36px; line-height: 1; margin-bottom: 2px; }
     
-    /* 対戦用 UI */
     .room-box { background: #f8fafc; padding: 12px; border-radius: 8px; margin: 10px 0; border: 1px solid #e2e8f0; }
 
-    /* 勝敗画面スタイル */
     .result-banner { font-size: 48px; margin: 15px 0 5px 0; }
     .result-title { font-size: 28px; font-weight: bold; margin-bottom: 15px; }
   </style>
@@ -83,11 +82,34 @@
         HP: <span id="home-hp">50</span> / 攻撃: <span id="home-atk">10</span> / 防御: <span id="home-def">5</span> / 素早さ: <span id="home-spd">10</span>
       </div>
 
-      <div style="display: flex; flex-direction: column; gap: 10px;">
+      <div style="display: flex; flex-direction: column; gap: 8px;">
         <button onclick="showScreen('screen-training-ready')">⏱️ トレーニング (30秒)</button>
         <button onclick="showScreen('screen-status')">⚙️ ステータス強化</button>
         <button onclick="showScreen('screen-battle')">⚔️ 対戦モード</button>
+        <button class="secondary" onclick="showScreen('screen-save')">☁️ データ保存・引き継ぎ</button>
       </div>
+    </div>
+
+    <!-- 1-2. クラウド保存・引き継ぎ画面 -->
+    <div id="screen-save" class="screen">
+      <h2>☁️ セーブデータ管理</h2>
+      <p style="font-size: 13px; color: #64748b;">
+        データは端末内に<strong>自動保存（LocalStorage）</strong>されています。<br>
+        別の端末へ引き継ぐ場合は、IDを設定してクラウドへ保存してください。
+      </p>
+
+      <div class="room-box">
+        <label style="font-weight: bold; display: block; margin-bottom: 5px;">引き継ぎ用ID (半角英数字)</label>
+        <input type="text" id="cloud-id-input" placeholder="例: user1234" maxlength="12" style="width: 200px;">
+        <div style="display: flex; justify-content: center; gap: 8px; margin-top: 10px;">
+          <button class="success" onclick="saveToCloud()">☁️ クラウドに保存</button>
+          <button style="background: #0284c7;" onclick="loadFromCloud()">📥 クラウドから読込</button>
+        </div>
+      </div>
+
+      <p id="save-msg" style="font-size: 14px; font-weight: bold; min-height: 20px; color: var(--primary);"></p>
+      <br>
+      <button class="secondary" onclick="showScreen('screen-home')">ホームへ戻る</button>
     </div>
 
     <!-- 2-1. トレーニング準備 -->
@@ -168,9 +190,7 @@
     <div id="screen-battle" class="screen">
       <h2>⚔️ 対戦モード</h2>
       
-      <!-- 部屋作成・参加・CPU選択フォーム -->
       <div id="enemy-select-area">
-        <!-- CPU対戦セクション -->
         <div class="room-box" style="background: #e0e7ff; border-color: #c7d2fe;">
           <label style="font-weight: bold; display: block; margin-bottom: 5px;">🤖 CPUのレベル設定（付与PT）</label>
           <div style="display: flex; justify-content: center; align-items: center; gap: 8px; margin-bottom: 10px;">
@@ -198,7 +218,6 @@
 
       <div id="battle-area" style="display:none; margin-top:15px;">
         <div style="display:flex; justify-content:space-between; align-items:flex-end;">
-          <!-- プレイヤー表示部 -->
           <div style="width:48%;">
             <div id="p-icon" class="char-icon">🧙‍♂️</div>
             <strong id="p-display-name">勇者</strong>
@@ -206,7 +225,6 @@
             <span id="p-hp-text">50/50</span>
             <div id="p-status-buff" style="font-size:11px; color:#eab308; font-weight:bold; height:16px;"></div>
           </div>
-          <!-- 敵表示部 -->
           <div style="width:48%;">
             <div id="e-icon" class="char-icon">🐉</div>
             <strong id="e-name">対戦相手</strong>
@@ -303,32 +321,161 @@
 
   // オンライン通信管理用
   let currentRoomCode = null;
-  let myRole = null; // 'host' or 'guest'
+  let myRole = null;
   let roomRef = null;
 
-  function selectAvatar(icon) {
+  // ==========================================
+  //  1. データセーブ＆ロード処理 (LocalStorage & Firebase)
+  // ==========================================
+
+  // (1) LocalStorage: ローカル自動セーブ
+  function saveLocal() {
+    const saveData = {
+      playerName: playerName,
+      playerAvatar: playerAvatar,
+      points: points,
+      stats: {
+        maxHp: player.maxHp,
+        atk: player.atk,
+        def: player.def,
+        spd: player.spd
+      }
+    };
+    localStorage.setItem('kisomon_local_save', JSON.stringify(saveData));
+  }
+
+  // (1) LocalStorage: ローカルロード
+  function loadLocal() {
+    const raw = localStorage.getItem('kisomon_local_save');
+    if (raw) {
+      try {
+        const data = JSON.parse(raw);
+        playerName = data.playerName || "勇者";
+        playerAvatar = data.playerAvatar || "🧙‍♂️";
+        points = data.points || 0;
+        if (data.stats) {
+          player.maxHp = data.stats.maxHp || BASE_STATS.hp;
+          player.hp = player.maxHp;
+          player.atk = data.stats.atk || BASE_STATS.atk;
+          player.def = data.stats.def || BASE_STATS.def;
+          player.spd = data.stats.spd || BASE_STATS.spd;
+        }
+        document.getElementById('player-name-input').value = playerName;
+        selectAvatar(playerAvatar, false); // 再帰的保存を防ぐフラグ
+      } catch(e) {
+        console.error("Local save load failed", e);
+      }
+    }
+  }
+
+  // (2) Firebase: クラウドへセーブ
+  function saveToCloud() {
+    const userId = document.getElementById('cloud-id-input').value.trim();
+    const msg = document.getElementById('save-msg');
+    if (!userId) {
+      msg.style.color = '#ef4444';
+      msg.innerText = '⚠️ 引き継ぎ用IDを入力してください';
+      return;
+    }
+
+    saveLocal(); // クラウド保存時にローカルも同期
+
+    const saveData = {
+      playerName: playerName,
+      playerAvatar: playerAvatar,
+      points: points,
+      stats: {
+        maxHp: player.maxHp,
+        atk: player.atk,
+        def: player.def,
+        spd: player.spd
+      },
+      updatedAt: Date.now()
+    };
+
+    db.ref('users/' + userId).set(saveData)
+      .then(() => {
+        msg.style.color = '#22c55e';
+        msg.innerText = `✅ クラウドにセーブ完了！ (ID: ${userId})`;
+      })
+      .catch(err => {
+        msg.style.color = '#ef4444';
+        msg.innerText = '❌ 保存に失敗しました: ' + err.message;
+      });
+  }
+
+  // (2) Firebase: クラウドからロード
+  function loadFromCloud() {
+    const userId = document.getElementById('cloud-id-input').value.trim();
+    const msg = document.getElementById('save-msg');
+    if (!userId) {
+      msg.style.color = '#ef4444';
+      msg.innerText = '⚠️ 引き継ぎ用IDを入力してください';
+      return;
+    }
+
+    db.ref('users/' + userId).once('value')
+      .then(snapshot => {
+        if (!snapshot.exists()) {
+          msg.style.color = '#ef4444';
+          msg.innerText = '❌ 指定したIDのデータが見つかりません';
+          return;
+        }
+        const data = snapshot.val();
+        playerName = data.playerName || "勇者";
+        playerAvatar = data.playerAvatar || "🧙‍♂️";
+        points = data.points || 0;
+        if (data.stats) {
+          player.maxHp = data.stats.maxHp || BASE_STATS.hp;
+          player.hp = player.maxHp;
+          player.atk = data.stats.atk || BASE_STATS.atk;
+          player.def = data.stats.def || BASE_STATS.def;
+          player.spd = data.stats.spd || BASE_STATS.spd;
+        }
+        document.getElementById('player-name-input').value = playerName;
+        selectAvatar(playerAvatar, false);
+
+        saveLocal(); // ローカルデータもクラウドの内容で上書き
+        updateUI();
+
+        msg.style.color = '#22c55e';
+        msg.innerText = '🎉 データを読み込みました！';
+      })
+      .catch(err => {
+        msg.style.color = '#ef4444';
+        msg.innerText = '❌ 読み込み失敗: ' + err.message;
+      });
+  }
+
+  // ==========================================
+  //  基本操作・UI連動
+  // ==========================================
+
+  function selectAvatar(icon, doSave = true) {
     playerAvatar = icon;
     document.querySelectorAll('.avatar-option').forEach(el => {
       el.classList.toggle('selected', el.innerText === icon);
     });
     document.getElementById('p-icon').innerText = playerAvatar;
+    if (doSave) saveLocal();
   }
 
   function updatePlayerInfo() {
     const inputName = document.getElementById('player-name-input').value.trim();
     playerName = inputName !== "" ? inputName : "勇者";
     document.getElementById('p-display-name').innerText = playerName;
+    saveLocal();
   }
 
   function showScreen(screenId) {
     document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
     document.getElementById(screenId).classList.add('active');
     if (screenId === 'screen-battle') updateCpuLevel();
+    if (screenId === 'screen-save') document.getElementById('save-msg').innerText = '';
     updateUI();
   }
 
   function updateUI() {
-    updatePlayerInfo();
     document.getElementById('home-pt').innerText = points;
     document.getElementById('status-pt').innerText = points;
     
@@ -391,6 +538,7 @@
     if (userAns === currentAns) {
       trainingScore++;
       points++;
+      saveLocal(); // ポイント獲得ごとにローカル保存
       msg.style.color = '#22c55e';
       msg.innerText = '〇 正解！';
       document.getElementById('current-score').innerText = trainingScore;
@@ -426,6 +574,7 @@
     if (type === 'atk') player.atk += 2;
     if (type === 'def') player.def += 1;
     if (type === 'spd') player.spd += 1;
+    saveLocal();
     updateUI();
   }
 
@@ -439,6 +588,7 @@
     } else if (type === 'spd' && player.spd > BASE_STATS.spd) {
       player.spd -= 1; points++;
     }
+    saveLocal();
     updateUI();
   }
 
@@ -456,14 +606,13 @@
       const addedCount = (player.spd - BASE_STATS.spd) / 1;
       if (addedCount > 0) { points += addedCount; player.spd = BASE_STATS.spd; }
     }
+    saveLocal();
     updateUI();
   }
 
-  // --- CPU自動ステータス生成 ロジック ---
+  // --- CPU対戦＆オンライン対戦 ---
   function generateCpuStats(level) {
-    let pts = Math.max(1, level); // 上限を無くし、最小値のみ1に固定
-    
-    // 基本割り振り比率（HP:25%, 攻撃:35%, 防御:20%, 素早さ:20%）
+    let pts = Math.max(1, level);
     let hpPts = Math.floor(pts * 0.25);
     let atkPts = Math.floor(pts * 0.35);
     let defPts = Math.floor(pts * 0.20);
@@ -547,7 +696,6 @@
     return validActions[Math.floor(Math.random() * validActions.length)];
   }
 
-  // --- オンライン対戦 部屋管理 ---
   function createRoom() {
     isCpuBattle = false;
     const code = Math.floor(1000 + Math.random() * 9000).toString();
@@ -637,7 +785,6 @@
     });
   }
 
-  // --- 対戦共通 実行ロジック ---
   function startOnlineBattle(data) {
     inBattle = true;
     turnCount = 1;
@@ -793,7 +940,7 @@
       }
 
       if (target.isGuarding) {
-        logMsg(`${actorLabel}の攻撃！...しかし相手は **まもって** いる！`);
+        logMsg(`${actorLabel}の攻撃！...しかし相手は **まmoって** いる！`);
       } else {
         const damage = Math.max(1, baseAtk - target.def);
         logMsg(`${actorLabel}の **こうげき**！ ${damage} のダメージ！`);
@@ -887,7 +1034,11 @@
     log.scrollTop = log.scrollHeight;
   }
 
-  updateUI();
+  // 起動時の初期化処理
+  window.onload = function() {
+    loadLocal(); // ブラウザ起動時にローカル保存データを自動復元
+    updateUI();
+  };
 </script>
 </body>
 </html>

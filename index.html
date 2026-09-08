@@ -135,12 +135,12 @@
 
         <button type="button" class="lvl-btn" onclick="selectTrainingLevel(2)" id="lvl-btn-2">
           🌿 <strong>レベル 2（小学後半）</strong><br>
-          <span style="font-size: 12px; color: #64748b;">2桁の足し算・引き算 / 2桁×1桁の掛け算 （1問につき <b>2 PT</b>）</span>
+          <span style="font-size: 12px; color: #64748b;">＋−（2桁/1桁の組み合わせ）/ ×（1桁/2桁の組み合わせ） （1問につき <b>2 PT</b>）</span>
         </button>
 
         <button type="button" class="lvl-btn" onclick="selectTrainingLevel(3)" id="lvl-btn-3">
           🔥 <strong>レベル 3（中学レベル）</strong><br>
-          <span style="font-size: 12px; color: #64748b;">正負の数の計算（負の数の＋−×） （1問につき <b>3 PT</b>）</span>
+          <span style="font-size: 12px; color: #64748b;">正負の数の計算（＋−×の桁数ランダム） （1問につき <b>3 PT</b>）</span>
         </button>
       </div>
 
@@ -590,6 +590,18 @@
     }, 1000);
   }
 
+  // 数値生成ヘルパー関数
+  function get1Digit() { return Math.floor(Math.random() * 9) + 1; }
+  function get2Digit() { return Math.floor(Math.random() * 90) + 10; }
+  function getSigned1Digit() {
+    let val = get1Digit();
+    return Math.random() < 0.5 ? val : -val;
+  }
+  function getSigned2Digit() {
+    let val = get2Digit();
+    return Math.random() < 0.5 ? val : -val;
+  }
+
   function generateProblem() {
     const ops = ['+', '-', '*'];
     const op = ops[Math.floor(Math.random() * ops.length)];
@@ -598,30 +610,58 @@
     const formatNum = n => n < 0 ? `(${n})` : n;
 
     if (selectedLevel === 1) {
-      num1 = Math.floor(Math.random() * 9) + 1;
-      num2 = Math.floor(Math.random() * 9) + 1;
+      // レベル1: 1桁と1桁
+      num1 = get1Digit();
+      num2 = get1Digit();
     } 
     else if (selectedLevel === 2) {
+      // レベル2
       if (op === '*') {
-        num1 = Math.floor(Math.random() * 90) + 10;
-        num2 = Math.floor(Math.random() * 9) + 1;
+        // かけ算: 1桁と1桁、1桁と2桁がランダム
+        const pattern = Math.floor(Math.random() * 3);
+        if (pattern === 0) {
+          num1 = get1Digit(); num2 = get1Digit();
+        } else if (pattern === 1) {
+          num1 = get1Digit(); num2 = get2Digit();
+        } else {
+          num1 = get2Digit(); num2 = get1Digit();
+        }
       } else {
-        num1 = Math.floor(Math.random() * 90) + 10;
-        num2 = Math.floor(Math.random() * 90) + 10;
+        // 足し算・引き算: 2桁と2桁、1桁と2桁、1桁と1桁がランダム
+        const pattern = Math.floor(Math.random() * 4);
+        if (pattern === 0) {
+          num1 = get2Digit(); num2 = get2Digit();
+        } else if (pattern === 1) {
+          num1 = get1Digit(); num2 = get2Digit();
+        } else if (pattern === 2) {
+          num1 = get2Digit(); num2 = get1Digit();
+        } else {
+          num1 = get1Digit(); num2 = get1Digit();
+        }
       }
     } 
     else if (selectedLevel === 3) {
-      const getSignedNum = (maxVal) => {
-        let val = Math.floor(Math.random() * maxVal) + 1;
-        return Math.random() < 0.5 ? val : -val;
-      };
-
+      // レベル3: 正負の数（正負それぞれの桁数パターンをランダム指定）
       if (op === '*') {
-        num1 = getSignedNum(99);
-        num2 = getSignedNum(9);
+        const pattern = Math.floor(Math.random() * 3);
+        if (pattern === 0) {
+          num1 = getSigned1Digit(); num2 = getSigned1Digit();
+        } else if (pattern === 1) {
+          num1 = getSigned1Digit(); num2 = getSigned2Digit();
+        } else {
+          num1 = getSigned2Digit(); num2 = getSigned1Digit();
+        }
       } else {
-        num1 = getSignedNum(99);
-        num2 = getSignedNum(99);
+        const pattern = Math.floor(Math.random() * 4);
+        if (pattern === 0) {
+          num1 = getSigned2Digit(); num2 = getSigned2Digit();
+        } else if (pattern === 1) {
+          num1 = getSigned1Digit(); num2 = getSigned2Digit();
+        } else if (pattern === 2) {
+          num1 = getSigned2Digit(); num2 = getSigned1Digit();
+        } else {
+          num1 = getSigned1Digit(); num2 = getSigned1Digit();
+        }
       }
     }
 

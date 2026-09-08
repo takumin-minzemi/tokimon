@@ -177,10 +177,10 @@
     <div id="screen-status" class="screen">
       <h2>⚙️ ステータス強化</h2>
       <p>所持ポイント: <strong id="status-pt" style="font-size:24px; color:var(--primary);">0</strong> PT</p>
-      <p style="font-size: 12px; color: #64748b;">※ どのステータスも 1 PT で 1回強化できます</p>
+      <p style="font-size: 12px; color: #64748b;">※ どのステータスも 1 PT で +1 強化できます</p>
       
       <div class="status-row">
-        <span>HP (+10): <b id="val-hp">50</b></span>
+        <span>HP (+1): <b id="val-hp">50</b></span>
         <div class="btn-group">
           <button class="btn-small danger" onclick="subStat('hp')">-</button>
           <button class="btn-small" onclick="addStat('hp')">+</button>
@@ -188,7 +188,7 @@
         </div>
       </div>
       <div class="status-row">
-        <span>攻撃力 (+2): <b id="val-atk">10</b></span>
+        <span>攻撃力 (+1): <b id="val-atk">10</b></span>
         <div class="btn-group">
           <button class="btn-small danger" onclick="subStat('atk')">-</button>
           <button class="btn-small" onclick="addStat('atk')">+</button>
@@ -669,12 +669,12 @@
     showScreen('screen-training-fb');
   }
 
-  // --- ステータス強化機能 ---
+  // --- ステータス強化機能 (すべて 1PT で +1) ---
   function addStat(type) {
     if (points < 1) return;
     points -= 1;
-    if (type === 'hp') { player.maxHp += 10; player.hp += 10; }
-    if (type === 'atk') player.atk += 2;
+    if (type === 'hp') { player.maxHp += 1; player.hp += 1; }
+    if (type === 'atk') player.atk += 1;
     if (type === 'def') player.def += 1;
     if (type === 'spd') player.spd += 1;
     saveData();
@@ -683,9 +683,9 @@
 
   function subStat(type) {
     if (type === 'hp' && player.maxHp > BASE_STATS.hp) {
-      player.maxHp -= 10; player.hp -= 10; points += 1;
+      player.maxHp -= 1; player.hp -= 1; points += 1;
     } else if (type === 'atk' && player.atk > BASE_STATS.atk) {
-      player.atk -= 2; points += 1;
+      player.atk -= 1; points += 1;
     } else if (type === 'def' && player.def > BASE_STATS.def) {
       player.def -= 1; points += 1;
     } else if (type === 'spd' && player.spd > BASE_STATS.spd) {
@@ -697,16 +697,16 @@
 
   function resetStat(type) {
     if (type === 'hp') {
-      const addedCount = (player.maxHp - BASE_STATS.hp) / 10;
+      const addedCount = player.maxHp - BASE_STATS.hp;
       if (addedCount > 0) { points += addedCount; player.maxHp = BASE_STATS.hp; player.hp = BASE_STATS.hp; }
     } else if (type === 'atk') {
-      const addedCount = (player.atk - BASE_STATS.atk) / 2;
+      const addedCount = player.atk - BASE_STATS.atk;
       if (addedCount > 0) { points += addedCount; player.atk = BASE_STATS.atk; }
     } else if (type === 'def') {
-      const addedCount = (player.def - BASE_STATS.def) / 1;
+      const addedCount = player.def - BASE_STATS.def;
       if (addedCount > 0) { points += addedCount; player.def = BASE_STATS.def; }
     } else if (type === 'spd') {
-      const addedCount = (player.spd - BASE_STATS.spd) / 1;
+      const addedCount = player.spd - BASE_STATS.spd;
       if (addedCount > 0) { points += addedCount; player.spd = BASE_STATS.spd; }
     }
     saveData();
@@ -809,10 +809,10 @@
     let spdPts = pts - (hpPts + atkPts + defPts);
 
     return {
-      hp: BASE_STATS.hp + (hpPts * 10),
-      atk: BASE_STATS.atk + (atkPts * 2),
-      def: BASE_STATS.def + (defPts * 1),
-      spd: BASE_STATS.spd + (spdPts * 1)
+      hp: BASE_STATS.hp + hpPts,
+      atk: BASE_STATS.atk + atkPts,
+      def: BASE_STATS.def + defPts,
+      spd: BASE_STATS.spd + spdPts
     };
   }
 
